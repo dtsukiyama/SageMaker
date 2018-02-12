@@ -50,17 +50,40 @@ def tokenizeText(data, num_words):
     X = tokenize.texts_to_matrix(data)
     return X
 
-def encodeLabel(labels):
+def binarizeLabel(labels):
+    """
+    Args: label column
+    Returns: encoded labels
+    """
     encoder = preprocessing.LabelBinarizer()
     encoder.fit(labels)
     joblib.dump(encoder, 'encoders/encoder.pkl')
     y = encoder.transform(labels)
     return y
 
+def encodeLabels(labels):
+    """
+    Args: label column
+    Returns: encoded labels
+    """
+    encoder = LabelEncoder()
+    encoder.fit(labels)
+    y = encoder.transform(labels)
+    num_classes = np.max(y) + 1
+    print("num classes: {}".format(num_classes))
+    joblib.dump(encoder, 'encoders/encoder.pkl')
+    return y
+
 def myEncoder():
+    """
+    Returns: saved label encoder
+    """
     le = joblib.load('encoders/encoder.pkl') 
     return le
 
 def myTokenizer():
+    """
+    Returns: saved fitted tokenizer
+    """
     my_tokenizer = joblib.load('encoders/tokenize.pkl') 
     return my_tokenizer

@@ -7,6 +7,10 @@ INPUT_TENSOR_NAME = 'inputs'
 
 
 def estimator_fn(run_config, params):
+    """
+    Args: config, params = None, None
+    Returns: Deep neural net classifier pre-made estimator
+    """
     feature_columns = [tf.feature_column.numeric_column(INPUT_TENSOR_NAME, shape=[500])]
     return tf.estimator.DNNClassifier(feature_columns=feature_columns,
                                       hidden_units=[128, 256, 20],
