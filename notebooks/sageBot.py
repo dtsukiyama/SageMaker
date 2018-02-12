@@ -17,6 +17,10 @@ role = get_execution_role()
 
 def train(data_directory, num_steps=1000):
     """
+    Trains canned deep neural network estimator.
+    
+    Use: classifier = train('data')
+    
     Args: 1. directory name where training data is stored
           2. Number of steps for training; default 1000
           
@@ -32,6 +36,11 @@ def train(data_directory, num_steps=1000):
 
 def saveAndDeploy(model):
     """
+    Takes trained classifier from train(), exports model to S3 bucket as tar.gz. Deploys model as endpoint.
+    Returns model for use in serving.
+    
+    Use: predictor = saveAndDeploy(classifier)
+    
     Args: 1. trained estimator
     
     Returns: 1. deployed model
@@ -54,6 +63,14 @@ def saveAndDeploy(model):
 class serve(object):
     def __init__(self, model, encoder):
         """
+        Takes exported model and saved encoder to serve enpoint predictions.
+        
+        Use: hosted = serve(predictor, encoder)
+        
+        hosted.predict(features)
+        
+        hosted.delete()
+        
         Args: predictor from deployed endpoint
         """
         self.model = model
