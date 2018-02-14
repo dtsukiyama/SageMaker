@@ -1,36 +1,66 @@
-# Training and Deploying Deep Learning models on SageMaker
+# Training and Deploying Machine Learning models on SageMaker
 
 
-## Using canned estimators
+# Two types of estimators
 
-Estimators, a high level TensorFlow API, simplifies your machine learning pipeline. Building an estimator allows you to train, evaluate, predict and export for serving. You can use one of TensorFlow's  pre-made classifier Estimators or you can buld your own. The first part of this tutorial addresses locally training a pre-made classifier and deploying an endpoint.
+- Pre-made estimators
+- Custom estimators
+  
+  
+# What is SageMaker?
+
+
+Amazon states:
+
+>Amazon SageMaker is a fully-managed service that enables developers and data scientists to quickly and easily build, train, and deploy machine learning models at any scale. Amazon SageMaker removes all the barriers that typically slow down developers who want to use machine learning.
+
+
+If you come from a software development background, a data science and machine learning workflow may be unfamiliar to you. In general the workflow consists of the following:
+
+1. Data exploration and feature engineering
+
+2. Model building and training
+
+3. Model evaluation and optimization
+
+4. Model deployment
+
+5. Iterate
+
+Often this process takes place in [Jupyter notebooks](http://jupyter.org/). Jupyter notebooks allow you to share code, visualizations, and narrative text; which helps others understand the steps taken when modeling a task.
+
+
+
+## Pre-made estimators 
+
+Estimators, a high level TensorFlow API, simplifies your machine learning pipeline. Building an estimator allows you to train, evaluate, predict and export for serving. You can use one of TensorFlow's  pre-made classifier Estimators or you can buld your own. The first part of this tutorial addresses locally training a pre-made classifier and deploying an endpoint. The second part addresses custom estimators and training on SageMaker's infrastructure.
 
 ## Setup
 
-This tutorial assumes you have SageMaker setup. You can clone this repo and upload the files to SageMaker or open up a terminal in SageMaker and clone the repo:
+This tutorial assumes you have SageMaker setup. You can clone this repo and upload the files to SageMaker or open up a terminal in SageMaker and try clone the repo* (I have not tried this, and it does not seem as if SageMaker has a way to version control yet).
+
+
+There are two notebooks: ```document-tagging``` and ```cutom-model```.
+
+
+We also need dummy data. in SageMaker, after you launch you Jupyter notebook instance you can open up a terminal. Download the testing data:
+
 
 ```
 cd SageMaker
-git clone https://github.com/dtsukiyama/SageMaker.git
-cd SageMaker/notebooks
 
-mkdir data
-mkdir encoders
-```
+cd data-sagemaker-dev/test-models/data
 
-You will also need the dummy data we used for the classifier:
-
-```
-cd data
 wget https://storage.googleapis.com/tensorflow-workshop-examples/stack-overflow-data.csv
+
 cd ..
 ```
 
-You can open the document-tagging.ipynb notebook to run the code.
+
 
 ## Data processing
 
-We are using a dataset of Stack Overflow questions with tags. We need to tokenize the text features and encode the labels. Create training, testing, and hold out data sets.
+We are using a dataset of Stack Overflow questions with tags. We need to tokenize the text features and encode the labels. Create training, testing, and hold out datasets.
 
 ```python
 import pandas as pd
@@ -81,7 +111,7 @@ holdout.to_csv('data/post_holdout.csv', header=None,index=False)
 
 ## Training and deploying estimator
 
-We import our libraries and define our role. We have some utility function in processing.py to handle loading our saved feature tokenizer and label encoder. 
+We import our libraries and define our role. We have some utility functions in processing.py to handle loading our saved feature tokenizer and label encoder. 
 
 
 ```python
@@ -97,7 +127,30 @@ sagemaker_session = sagemaker.Session()
 role = get_execution_role()
 ```
 
-I have created a wrapper, sageBot.py to handle training, deployment, and serving. We import our estimator, dnn_classifier.py, to sageBot, it consists of four functions: estimator_fn, serving_input_fn, train_input_fn, and _generate_input_fn:
+I have created a wrapper, sageBot.py to handle training, deployment, and serving. We import our estimator, dnn_classifier.py, to sageBot, it consists of four functions: estimator_fn, serving_input_fn, train_input_fn, and _generate_input_fn.
+
+
+A few things to remember when using pre-made estimators:
+
+
+* For classification problems, make sure that your label (the target variable you want to predict) is processed using categorical encoding, do not use one-hot encoding. Pre-made TensorFlow estimators that perform classification will throw errors. Some custom models using Keras and TensorFlow will train locally but fail when submitted to SageMaker infrastructure; you will get a dimension mismatch error. 
+
+
+* Make sure you set the correct number of classes for classification problems.
+
+
+* Make sure you set the proper feature shape in ```serving_input_fn```. Our bag of words model has 500 features because we set the max number of words argument to 500 when building the feature matrix. So pay attention to this line:
+
+```python     feature_spec = {INPUT_TENSOR_NAME: tf.FixedLenFeature(dtype=tf.float32, shape=[500])} ```
+
+
+* Finally, make sure you have he correct datatypes when generating your training data inputs. You can see in ```python _generate_input_fn``` that the target type and feature type are set:
+
+```python
+    filename=os.path.join(training_dir, training_filename), target_dtype=np.int, features_dtype=np.float32)
+```
+
+***
 
 ```python
 import os
@@ -176,7 +229,6 @@ def train(data_directory, num_steps=1000):
     classifier = estimator_fn(run_config = None, params = None)
     train_func = train_input_fn(data_directory, params = None)
     classifier.train(input_fn = train_func, steps = num_steps)
-    # score
     score = classifier.evaluate(input_fn = train_func, steps = 100)
     print("model evaluation: {}".format(score))
     return classifier
@@ -291,3 +343,190 @@ Delete the endpoint:
 hosted.delete()
 
 ```
+
+## Using custom estimators
+
+### TensorFlow addresses the use of custom estimators [here](https://www.tensorflow.org/get_started/custom_estimators).
+
+A ```model_fn``` function implements model training, evaluation, and prediction. SageMaker's [repo](https://github.com/awslabs/amazon-sagemaker-examples/blob/master/sagemaker-python-sdk/tensorflow_abalone_age_predictor_using_keras/tensorflow_abalone_age_predictor_using_keras.ipynb) has a in depth explanation of how these are constructed.
+
+
+
+```python
+def model_fn(features, labels, mode, params):
+   # Logic to do the following:
+   # 1. Configure the model via TensorFlow or Keras operations
+   # 2. Define the loss function for training/evaluation
+   # 3. Define the training operation/optimizer
+   # 4. Generate predictions
+   # 5. Return predictions/loss/train_op/eval_metric_ops in EstimatorSpec object
+   return EstimatorSpec(mode, predictions, loss, train_op, eval_metric_ops)
+   ```
+
+If you are somewhat familiar with machine learning and deep learning, configuring the model, defining loss, and the optimizer may be familiar to you. A few issues to pay attention to:
+
+* Make sure you are passing the correct outputs to your loss function. So predicted class for classification problems. For regression problems you will pass your output through a linear activation and reshape it:
+
+```python
+
+  # Connect the output layer to second hidden layer (no activation fn)
+  output_layer = Dense(1, activation='linear')(second_hidden_layer)
+
+  # Reshape output layer to 1-dim Tensor to return predictions
+  predictions = tf.reshape(output_layer, [-1])
+  
+```
+
+* Make sure to create a predictions dictionary with the output you want when serving predictions from your endpoint.
+
+
+* Make sure to set the feature size in ```python def serving_input_fn(params)```. When we processed our data we tokenized the text, created a bag of words matrix, but we set the maximum number of words argument to 500. Make sure the inputs match this dimension.
+
+```python
+
+    inputs = {INPUT_TENSOR_NAME: tf.placeholder(tf.float32, [None, 500])}
+```
+
+* Make sure to set the correct datatypes in the input function ```python def _input_fn(training_dir, training_filename)```. You can see that the label and features have distinct datatypes:
+
+```python filename=os.path.join(training_dir, training_filename), target_dtype=np.int, features_dtype=np.float32)```
+
+* Make sure that your target label you are training on is set as a categorical encoding, which means do not use one-hot encoding. This is true for the pre-made TensorFlow estimators and custom estimators that perform classification. I was able to build and train custom Keras and TensorFlow estimators locally with one-hot encoding, but this would always fail when submitting training to SagerMaker's infrastructure.
+
+
+***
+
+### Full estimator:
+
+***
+
+```python
+import numpy as np
+import os
+import tensorflow as tf
+from tensorflow.python.estimator.export.export import build_raw_serving_input_receiver_fn
+from tensorflow.python.estimator.export.export_output import PredictOutput
+
+
+INPUT_TENSOR_NAME = "inputs"
+SIGNATURE_NAME = "serving_default"
+LEARNING_RATE = 0.001
+
+
+def model_fn(features, labels, mode, params):
+    
+    # 1. Configure the neural net, in this case a very simple two layer network.
+    first_hidden_layer = tf.keras.layers.Dense(128, activation='relu', name='first-layer')(features[INPUT_TENSOR_NAME])
+    second_hidden_layer = tf.keras.layers.Dense(256, activation='relu')(first_hidden_layer)
+    logits = tf.keras.layers.Dense(20)(second_hidden_layer)
+
+    # 1a. This is a classification example we need to find our class predicitons. 
+    predicted_classes = tf.argmax(logits, axis=1)
+
+    # Provide an estimator spec for `ModeKeys.PREDICT`.
+    if mode == tf.estimator.ModeKeys.PREDICT:
+        return tf.estimator.EstimatorSpec(
+            mode=mode,
+            predictions = {
+            'class_ids': predicted_classes[:, tf.newaxis],
+            'probabilities': tf.nn.softmax(logits),
+            'logits': logits,},
+            export_outputs={SIGNATURE_NAME: PredictOutput({"jobs": predicted_classes})})
+
+    # 2. Define the loss function for training/evaluation using Tensorflow.
+    loss = tf.losses.sparse_softmax_cross_entropy(tf.cast(labels, dtype=tf.int32), logits)
+
+    # 3. Define the training operation/optimizer using Tensorflow operation/optimizer.
+    train_op = tf.contrib.layers.optimize_loss(
+        loss=loss,
+        global_step=tf.contrib.framework.get_global_step(),
+        learning_rate=params["learning_rate"],
+        optimizer="Adam")
+
+    # 4. Generate predictions as Tensorflow tensors.
+    predictions_dict = {"jobs": predicted_classes,
+                        "classes": logits}
+
+    # 5. Generate necessary evaluation metrics.
+    # Calculate accuracy
+    eval_metric_ops = {
+        "accuracy": tf.metrics.accuracy(labels, predicted_classes)
+    }
+
+    # Provide an estimator spec for `ModeKeys.EVAL` and `ModeKeys.TRAIN` modes.
+    return tf.estimator.EstimatorSpec(
+        mode=mode,
+        loss=loss,
+        train_op=train_op,
+        eval_metric_ops=eval_metric_ops)
+    
+
+def serving_input_fn(params):
+    inputs = {INPUT_TENSOR_NAME: tf.placeholder(tf.float32, [None, 500])}
+    return tf.estimator.export.ServingInputReceiver(inputs, inputs)
+
+
+params = {"learning_rate": LEARNING_RATE}
+
+
+def train_input_fn(training_dir, params):
+    return _input_fn(training_dir, 'post_train.csv')
+
+
+def eval_input_fn(training_dir, params):
+    return _input_fn(training_dir, 'post_test.csv')
+
+def _input_fn(training_dir, training_filename):
+    training_set = tf.contrib.learn.datasets.base.load_csv_without_header(
+        filename=os.path.join(training_dir, training_filename), target_dtype=np.int, features_dtype=np.float32)
+
+    return tf.estimator.inputs.numpy_input_fn(
+        x={INPUT_TENSOR_NAME: np.array(training_set.data)},
+        y=np.array(training_set.target),
+        num_epochs=None,
+        shuffle=True)()
+```
+
+### Once you have your custom estimator defined you can submit it for training on SageMaker's infrastructure, this will take several minutes:
+
+```python
+from sagemaker.tensorflow import TensorFlow
+
+custom_estimator = TensorFlow(entry_point='custom_estimator.py',
+                               role=role,
+                               training_steps= 1000,                                  
+                               evaluation_steps= 100,
+                               hyperparameters={'learning_rate': 0.001},
+                               train_instance_count=1,
+                               train_instance_type='ml.c4.xlarge')
+
+custom_estimator.fit(inputs)
+```
+
+### You can then deploy the mode, this will also take several minutes:
+
+```python
+custom_predictor = custom_estimator.deploy(initial_instance_count=1, instance_type='ml.m4.xlarge')
+```
+
+### Finally, test the endpoint, i.e. make predictions:
+
+```python
+import tensorflow as tf
+import numpy as np
+
+prediction_set = tf.contrib.learn.datasets.base.load_csv_without_header(
+    filename=os.path.join('data/post_holdout.csv'), target_dtype=np.int, features_dtype=np.float32)
+
+data = prediction_set.data[0]
+tensor_proto = tf.make_tensor_proto(values=np.asarray(data), shape=[1, len(data)], dtype=tf.float32)
+
+custom_predictor.predict(tensor_proto)
+```
+
+### Make sure to delete the endpoint since we are just testing and do not want to incur charges:
+
+```python
+sagemaker.Session().delete_endpoint(custom_predictor.endpoint)
+```
+
